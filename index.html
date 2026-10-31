@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mun Vaasal - South Asian Kolam Studio</title>
+    <title>Mun Vaasal - South Indian Kolam Studio</title>
     <style>
         :root {
             --bg-color: #1a0f0a;
@@ -88,7 +88,7 @@
             position: relative;
             width: 100%;
             aspect-ratio: 1;
-            background: rgba(0,0,0,0.3);
+            background: rgba(0,0,0,0.4);
             border-radius: 12px;
             overflow: hidden;
             display: flex;
@@ -99,12 +99,15 @@
 
         canvas {
             touch-action: none;
-            cursor: crosshair;
+            cursor: pointer;
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .controls-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 8px;
         }
 
@@ -112,26 +115,36 @@
             background: var(--bg-color);
             color: var(--text-main);
             border: 1px solid var(--accent);
-            padding: 10px;
+            padding: 10px 6px;
             border-radius: 8px;
-            font-size: 0.85rem;
+            font-size: 0.75rem;
             font-weight: 600;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
+        button.active-toggle {
+            background: var(--accent);
+            color: #ffffff;
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        select {
+            grid-column: span 3;
+            font-size: 0.8rem;
+        }
+
         button:active {
             transform: scale(0.96);
-            background: var(--accent);
-            color: #fff;
         }
 
         button.primary {
             background: var(--accent);
             color: #fff;
-            grid-column: span 2;
+            grid-column: span 3;
             box-shadow: 0 4px 12px var(--accent-glow);
+            font-size: 0.85rem;
         }
 
         .info-box {
@@ -147,12 +160,12 @@
 
     <header>
         <h1>Mun Vaasal (முன் வாசல்)</h1>
-        <p class="subtitle">Digital South Asian Threshold Art Studio</p>
+        <p class="subtitle">Digital South Indian Pulli Kolam Studio</p>
     </header>
 
     <div class="app-container">
         <div class="canvas-wrapper">
-            <canvas id="kolamCanvas" width="360" height="360"></canvas>
+            <canvas id="kolamCanvas"></canvas>
         </div>
 
         <div class="controls-grid">
@@ -161,31 +174,46 @@
                 <option value="indigo">Night Indigo</option>
                 <option value="emerald">Sacred Emerald</option>
             </select>
-            <button onclick="clearCanvas()">Clear Canvas</button>
-            <button onclick="generateProceduralKolam()" class="primary">✨ Generate Sacred Pulli Pattern</button>
+            <button onclick="undoLastLine()">Undo</button>
+            <button id="mirrorBtn" onclick="toggleMirrorMode()">Mirror Mode: OFF</button>
+            <button onclick="clearCanvas()">Clear</button>
+            <button onclick="generateProceduralKolam()" class="primary">Auto-Generate Pulli Kolam</button>
         </div>
 
         <div class="info-box">
-            Swipe your finger across the dot grid (*Pulli*) or tap generate to weave traditional symmetrical threshold loops.
+            Tap consecutive <strong>Pulli (dots)</strong> to draw lines. Turn on <strong>Mirror Mode</strong> to automatically reflect every stroke live!
         </div>
     </div>
 
     <script>
-        const canvas = document.getElementById('kolamCanvas');
-        const ctx = canvas.getContext('2d');
+        var canvas = document.getElementById('kolamCanvas');
+        var ctx = canvas.getContext('2d');
         
-        let isDrawing = false;
-        let points = [];
-        let userPath = [];
+        var points = [];
+        var lines = []; 
+        var selectedPoint = null;
+        var isMirrorActive = false;
 
-        const gridSize = 5; // 5x5 Pulli grid
-        const spacing = canvas.width / (gridSize + 1);
+        var gridSize = 5; 
+        var spacing = 0;
+
+        function resizeCanvas() {
+            var rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
+            spacing = canvas.width / (gridSize + 1);
+            initGrid();
+            drawScene();
+        }
 
         function initGrid() {
             points = [];
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
+            for (var r = 0; r < gridSize; r++) {
+                for (var c = 0; c < gridSize; c++) {
                     points.push({
+                        row: r,
+                        col: c,
+                        id: r * gridSize + c,
                         x: spacing * (c + 1),
                         y: spacing * (r + 1)
                     });
@@ -196,29 +224,35 @@
         function drawScene() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Draw Dots (Pulli)
-            const dotColor = getComputedStyle(document.body).getPropertyValue('--dot-color').trim();
-            points.forEach(p => {
+            var dotColor = getComputedStyle(document.body).getPropertyValue('--dot-color').trim() || '#ffb703';
+            var lineColor = getComputedStyle(document.body).getPropertyValue('--line-color').trim() || '#ff6b35';
+
+            // 1. Draw Lines
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            lines.forEach(function(line) {
                 ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fillStyle = dotColor;
-                ctx.fill();
+                ctx.moveTo(line.from.x, line.from.y);
+                ctx.lineTo(line.to.x, line.to.y);
+                ctx.stroke();
             });
 
-            // Draw User Strokes
-            if (userPath.length > 1) {
-                const lineColor = getComputedStyle(document.body).getPropertyValue('--line-color').trim();
+            // 2. Draw Dots (Pulli)
+            points.forEach(function(p) {
                 ctx.beginPath();
-                ctx.moveTo(userPath[0].x, userPath[0].y);
-                for (let i = 1; i < userPath.length; i++) {
-                    ctx.lineTo(userPath[i].x, userPath[i].y);
+                var radius = 7;
+                if (selectedPoint && selectedPoint.id === p.id) {
+                    radius = 11;
+                    ctx.fillStyle = '#ffffff';
+                } else {
+                    ctx.fillStyle = dotColor;
                 }
-                ctx.strokeStyle = lineColor;
-                ctx.lineWidth = 3;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.stroke();
-            }
+                ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
         }
 
         function changeTheme(theme) {
@@ -227,70 +261,123 @@
         }
 
         function clearCanvas() {
-            userPath = [];
+            lines = [];
+            selectedPoint = null;
             drawScene();
         }
 
+        function undoLastLine() {
+            if (lines.length > 0) {
+                var last = lines.pop();
+                if (last && last.isMirrored && lines.length > 0) {
+                    lines.pop();
+                }
+            }
+            selectedPoint = null;
+            drawScene();
+        }
+
+        function toggleMirrorMode() {
+            isMirrorActive = !isMirrorActive;
+            var btn = document.getElementById('mirrorBtn');
+            if (isMirrorActive) {
+                btn.innerText = "Mirror Mode: ON";
+                btn.classList.add('active-toggle');
+            } else {
+                btn.innerText = "Mirror Mode: OFF";
+                btn.classList.remove('active-toggle');
+            }
+        }
+
+        function addLineSegment(fromPoint, toPoint) {
+            lines.push({ from: fromPoint, to: toPoint, isMirrored: false });
+
+            if (isMirrorActive) {
+                var mirroredFrom = points.find(function(p) { return p.row === fromPoint.row && p.col === (gridSize - 1 - fromPoint.col); });
+                var mirroredTo = points.find(function(p) { return p.row === toPoint.row && p.col === (gridSize - 1 - toPoint.col); });
+
+                if (mirroredFrom && mirroredTo) {
+                    var isSameLine = (mirroredFrom.id === fromPoint.id && mirroredTo.id === toPoint.id) ||
+                                     (mirroredFrom.id === toPoint.id && mirroredTo.id === fromPoint.id);
+                    if (!isSameLine) {
+                        lines.push({ from: mirroredFrom, to: mirroredTo, isMirrored: true });
+                    }
+                }
+            }
+        }
+
         function generateProceduralKolam() {
-            userPath = [];
-            // Draw a symmetrical procedural loops connecting points
-            let startPoint = points[Math.floor(Math.random() * points.length)];
-            userPath.push(startPoint);
-            
-            for(let i = 0; i < 6; i++) {
-                let nextPoint = points[Math.floor(Math.random() * points.length)];
-                userPath.push(nextPoint);
+            lines = [];
+            selectedPoint = null;
+            var current = points[Math.floor(Math.random() * points.length)];
+
+            for (var i = 0; i < 5; i++) {
+                var neighbors = points.filter(function(p) { return p.id !== current.id; });
+                var next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                
+                var mirroredFrom = points.find(function(p) { return p.row === current.row && p.col === (gridSize - 1 - current.col); });
+                var mirroredTo = points.find(function(p) { return p.row === next.row && p.col === (gridSize - 1 - next.col); });
+                
+                lines.push({ from: current, to: next, isMirrored: false });
+                
+                if (mirroredFrom && mirroredTo) {
+                    var isSameLine = (mirroredFrom.id === current.id && mirroredTo.id === next.id) ||
+                                     (mirroredFrom.id === next.id && mirroredTo.id === current.id);
+                    if (!isSameLine) {
+                        lines.push({ from: mirroredFrom, to: mirroredTo, isMirrored: true });
+                    }
+                }
+                current = next;
             }
             drawScene();
         }
 
-        // Touch and Mouse Event Handlers
-        function getTouchPos(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-            return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
+        function handleInteraction(clientX, clientY) {
+            var rect = canvas.getBoundingClientRect();
+            var scaleX = canvas.width / rect.width;
+            var scaleY = canvas.height / rect.height;
+
+            var x = (clientX - rect.left) * scaleX;
+            var y = (clientY - rect.top) * scaleY;
+
+            var clickedPoint = null;
+            var minDist = 35; // Larger touch radius for mobile screens
+
+            points.forEach(function(p) {
+                var dist = Math.hypot(p.x - x, p.y - y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    clickedPoint = p;
+                }
+            });
+
+            if (clickedPoint) {
+                if (!selectedPoint) {
+                    selectedPoint = clickedPoint;
+                } else {
+                    if (selectedPoint.id !== clickedPoint.id) {
+                        addLineSegment(selectedPoint, clickedPoint);
+                    }
+                    selectedPoint = null;
+                }
+                drawScene();
+            }
         }
 
-        canvas.addEventListener('mousedown', (e) => {
-            isDrawing = true;
-            userPath.push(getTouchPos(e));
-            drawScene();
+        canvas.addEventListener('click', function(e) {
+            handleInteraction(e.clientX, e.clientY);
         });
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return;
-            userPath.push(getTouchPos(e));
-            drawScene();
+        canvas.addEventListener('touchend', function(e) {
+            if (e.changedTouches.length > 0) {
+                handleInteraction(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+                e.preventDefault();
+            }
         });
 
-        window.addEventListener('mouseup', () => {
-            isDrawing = false;
-        });
-
-        canvas.addEventListener('touchstart', (e) => {
-            isDrawing = true;
-            userPath.push(getTouchPos(e));
-            drawScene();
-            e.preventDefault();
-        });
-
-        canvas.addEventListener('touchmove', (e) => {
-            if (!isDrawing) return;
-            userPath.push(getTouchPos(e));
-            drawScene();
-            e.preventDefault();
-        });
-
-        canvas.addEventListener('touchend', () => {
-            isDrawing = false;
-        });
-
-        initGrid();
-        drawScene();
+        window.onload = function() {
+            resizeCanvas();
+        };
     </script>
 </body>
 </html>
